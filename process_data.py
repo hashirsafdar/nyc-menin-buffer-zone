@@ -120,6 +120,9 @@ def create_buffers(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     buffer_geoms = gdf_proj["geometry"].buffer(CRS_BUFFER_UNIT, resolution=BUFFER_RESOLUTION)
     keep_cols = {c: gdf_proj[c] for c in ["name", "color"] if c in gdf_proj.columns}
     buf_gdf = gpd.GeoDataFrame(keep_cols, geometry=buffer_geoms, crs=CRS_PROJECTED)
+    # Dissolve by color so overlapping buffers merge into one polygon per color.
+    # This prevents opacity stacking where zones overlap.
+    buf_gdf = buf_gdf.dissolve(by="color").reset_index()
     return buf_gdf.to_crs(CRS_DISPLAY)
 
 

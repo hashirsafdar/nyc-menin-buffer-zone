@@ -158,7 +158,7 @@ def build_map(worship_pts, worship_buf, edu_pts, edu_buf) -> folium.Map:
 
     # Marker layers (batched GeoJson, no clustering)
     worship_marker_fg = folium.FeatureGroup(
-        name="&#x26EA; Places of Worship — Locations", show=True
+        name="&#x26EA; Places of Worship — Locations", show=False
     )
     _add_marker_layer(
         worship_pts, worship_marker_fg, RELIGION_COLORS["unknown"],
@@ -168,7 +168,7 @@ def build_map(worship_pts, worship_buf, edu_pts, edu_buf) -> folium.Map:
     worship_marker_fg.add_to(m)
 
     edu_marker_fg = folium.FeatureGroup(
-        name="&#x1F393; Educational Facilities — Locations", show=True
+        name="&#x1F393; Educational Facilities — Locations", show=False
     )
     _add_marker_layer(
         edu_pts, edu_marker_fg, EDUCATION_COLOR,
