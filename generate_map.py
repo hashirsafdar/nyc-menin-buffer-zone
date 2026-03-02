@@ -13,7 +13,8 @@ import time
 from pathlib import Path
 
 _REQUIRED = ["osmnx", "geopandas", "folium", "shapely", "pyproj", "branca"]
-_missing = [p for p in _REQUIRED if not __import__("importlib").util.find_spec(p)]
+import importlib.util
+_missing = [p for p in _REQUIRED if not importlib.util.find_spec(p)]
 if _missing:
     print(
         f"ERROR: Missing packages: {', '.join(_missing)}\n"
