@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+
+# osmnx HTTP cache (large, auto-regenerated)
+cache/osmnx_cache/
+
+# Raw output (docs/index.html is the Pages version)
+output/
