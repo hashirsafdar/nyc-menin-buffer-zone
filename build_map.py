@@ -1,25 +1,21 @@
 # build_map.py — Folium interactive map assembly
 #
-# 4 independently-togglable FeatureGroups:
-#   1. Places of Worship — Buffer Zones (100ft)
-#   2. Educational Facilities — Buffer Zones (100ft)
-#   3. Places of Worship — Locations (clustered CircleMarkers)
-#   4. Educational Facilities — Locations (clustered CircleMarkers)
-#
-# Buffer polygons are added as a single batched GeoJson call per layer
-# (not per-row), keeping HTML size ~15-40MB for ~10,000 features.
+# Performance approach:
+#   - Buffer polygons: single batched GeoJson per layer (not per-row)
+#   - Markers: single GeoJson with CircleMarker point_to_layer (not per-row)
+#   - Buffer resolution reduced to 16 vertices per circle (config.BUFFER_RESOLUTION=4)
+#   - No MarkerCluster — individual dots visible at all zoom levels
 
 import json
 
 import folium
-from folium.plugins import MarkerCluster, MeasureControl
+from folium.plugins import MeasureControl
 import geopandas as gpd
 
 from config import (
     BUFFER_FILL_OPACITY,
     BUFFER_LINE_OPACITY,
     DEFAULT_ZOOM,
-    DISABLE_CLUSTER_AT_ZOOM,
     EDUCATION_COLOR,
     MARKER_FILL_OPACITY,
     MARKER_RADIUS,
@@ -59,37 +55,31 @@ def _add_buffer_layer(buf_gdf, feature_group, default_color):
     ).add_to(feature_group)
 
 
-def _add_marker_layer(pts_gdf, feature_group, default_color):
-    cluster = MarkerCluster(options={
-        "maxClusterRadius": 40,
-        "disableClusteringAtZoom": DISABLE_CLUSTER_AT_ZOOM,
-        "showCoverageOnHover": False,
-    })
+def _add_marker_layer(pts_gdf, feature_group, default_color, popup_fields, popup_aliases):
+    """Add markers as a single batched GeoJson with CircleMarker rendering."""
+    cols = ["name", "color"] + [f for f in popup_fields if f != "name"]
+    geojson_data = _gdf_to_geojson_dict(pts_gdf, cols)
 
-    for _, row in pts_gdf.iterrows():
-        color = row.get("color") or default_color
-        if not isinstance(color, str) or not color.startswith("#"):
-            color = default_color
-
-        folium.CircleMarker(
-            location=[row.geometry.y, row.geometry.x],
-            radius=MARKER_RADIUS,
-            color=color,
-            fill=True,
-            fill_color=color,
-            fill_opacity=MARKER_FILL_OPACITY,
-            weight=1.5,
-            popup=folium.Popup(
-                folium.IFrame(
-                    row.get("popup_html", "<i>No information available</i>"),
-                    width=250, height=160,
-                ),
-                max_width=260,
-            ),
-            tooltip=row.get("name", "Unknown"),
-        ).add_to(cluster)
-
-    cluster.add_to(feature_group)
+    folium.GeoJson(
+        geojson_data,
+        marker=folium.CircleMarker(radius=MARKER_RADIUS, fill=True),
+        style_function=lambda feature, dc=default_color: {
+            "radius": MARKER_RADIUS,
+            "fillColor": feature["properties"].get("color") or dc,
+            "color": feature["properties"].get("color") or dc,
+            "weight": 1.5,
+            "fillOpacity": MARKER_FILL_OPACITY,
+        },
+        tooltip=folium.GeoJsonTooltip(
+            fields=["name"], aliases=[""], localize=True, sticky=False,
+        ),
+        popup=folium.GeoJsonPopup(
+            fields=popup_fields,
+            aliases=popup_aliases,
+            localize=True,
+            max_width=280,
+        ),
+    ).add_to(feature_group)
 
 
 def _legend_html(worship_pts, edu_pts) -> str:
@@ -133,7 +123,7 @@ def _legend_html(worship_pts, edu_pts) -> str:
 def _stats_html(worship_pts, edu_pts) -> str:
     total = len(worship_pts) + len(edu_pts)
     return (
-        '<div style="position:fixed;top:10px;right:50px;z-index:9999;'
+        '<div style="position:fixed;bottom:40px;right:10px;z-index:9999;'
         'background:rgba(255,255,255,0.96);padding:12px 16px;border-radius:8px;'
         'box-shadow:0 2px 10px rgba(0,0,0,0.25);font-family:Arial,sans-serif;min-width:210px;">'
         '<div style="font-weight:bold;font-size:13px;margin-bottom:8px;'
@@ -153,6 +143,7 @@ def _stats_html(worship_pts, edu_pts) -> str:
 def build_map(worship_pts, worship_buf, edu_pts, edu_buf) -> folium.Map:
     m = _build_base_map()
 
+    # Buffer layers (underneath markers)
     worship_buffer_fg = folium.FeatureGroup(
         name="&#x26EA; Places of Worship — Buffer Zones (100ft)", show=True
     )
@@ -165,16 +156,25 @@ def build_map(worship_pts, worship_buf, edu_pts, edu_buf) -> folium.Map:
     _add_buffer_layer(edu_buf, edu_buffer_fg, EDUCATION_COLOR)
     edu_buffer_fg.add_to(m)
 
+    # Marker layers (batched GeoJson, no clustering)
     worship_marker_fg = folium.FeatureGroup(
         name="&#x26EA; Places of Worship — Locations", show=True
     )
-    _add_marker_layer(worship_pts, worship_marker_fg, RELIGION_COLORS["unknown"])
+    _add_marker_layer(
+        worship_pts, worship_marker_fg, RELIGION_COLORS["unknown"],
+        popup_fields=["name", "religion_display", "denomination", "address"],
+        popup_aliases=["Name", "Religion", "Denomination", "Address"],
+    )
     worship_marker_fg.add_to(m)
 
     edu_marker_fg = folium.FeatureGroup(
         name="&#x1F393; Educational Facilities — Locations", show=True
     )
-    _add_marker_layer(edu_pts, edu_marker_fg, EDUCATION_COLOR)
+    _add_marker_layer(
+        edu_pts, edu_marker_fg, EDUCATION_COLOR,
+        popup_fields=["name", "amenity_type", "address"],
+        popup_aliases=["Name", "Type", "Address"],
+    )
     edu_marker_fg.add_to(m)
 
     folium.LayerControl(collapsed=False, position="topright").add_to(m)

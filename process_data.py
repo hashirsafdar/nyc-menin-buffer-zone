@@ -9,6 +9,7 @@ import pandas as pd
 import geopandas as gpd
 
 from config import (
+    BUFFER_RESOLUTION,
     CRS_BUFFER_UNIT,
     CRS_DISPLAY,
     CRS_PROJECTED,
@@ -70,63 +71,7 @@ def _format_address(row) -> str:
         val = row.get(tag, "")
         if isinstance(val, str) and val.strip() and val.strip() != "nan":
             parts.append(val.strip())
-    return ", ".join(parts) if parts else "Address not recorded"
-
-
-def _worship_popup(row) -> str:
-    name = row.get("name", "Unnamed Place of Worship")
-    religion = str(row.get("religion", "")).replace("_", " ").title() or "Unknown"
-    denomination = str(row.get("denomination", "")).replace("_", " ").title() or "—"
-    addr = _format_address(row)
-    osm_id = row.get("osmid", "")
-    osm_link = (
-        f'<a href="https://www.openstreetmap.org/node/{osm_id}" '
-        f'target="_blank" style="font-size:10px; color:#999;">OSM</a>'
-        if osm_id else ""
-    )
-    return (
-        '<div style="font-family:Arial,sans-serif; min-width:210px;">'
-        f'<div style="font-weight:bold; font-size:13px; margin-bottom:6px; '
-        f'border-bottom:1px solid #eee; padding-bottom:4px;">{name}</div>'
-        '<table style="font-size:12px; border-collapse:collapse; width:100%;">'
-        f'<tr><td style="color:#666;padding:2px 8px 2px 0;">Religion</td>'
-        f'<td><b>{religion}</b></td></tr>'
-        f'<tr><td style="color:#666;padding:2px 8px 2px 0;">Denomination</td>'
-        f'<td>{denomination}</td></tr>'
-        f'<tr><td style="color:#666;padding:2px 8px 2px 0;">Address</td>'
-        f'<td style="font-size:11px;">{addr}</td></tr>'
-        '</table>'
-        f'<div style="margin-top:6px; font-size:10px; color:#aaa;">'
-        f'100ft buffer zone applies under Menin proposal &nbsp;{osm_link}</div>'
-        '</div>'
-    )
-
-
-def _education_popup(row) -> str:
-    name = row.get("name", "Unnamed Educational Facility")
-    amenity_type = str(row.get("amenity", "school")).replace("_", " ").title()
-    addr = _format_address(row)
-    operator = str(row.get("operator", "")).strip()
-    operator_line = (
-        f'<tr><td style="color:#666;padding:2px 8px 2px 0;">Operator</td>'
-        f'<td>{operator}</td></tr>'
-        if operator and operator != "nan" else ""
-    )
-    return (
-        '<div style="font-family:Arial,sans-serif; min-width:210px;">'
-        f'<div style="font-weight:bold; font-size:13px; margin-bottom:6px; '
-        f'border-bottom:1px solid #eee; padding-bottom:4px;">{name}</div>'
-        '<table style="font-size:12px; border-collapse:collapse; width:100%;">'
-        f'<tr><td style="color:#666;padding:2px 8px 2px 0;">Type</td>'
-        f'<td><b>{amenity_type}</b></td></tr>'
-        f'{operator_line}'
-        f'<tr><td style="color:#666;padding:2px 8px 2px 0;">Address</td>'
-        f'<td style="font-size:11px;">{addr}</td></tr>'
-        '</table>'
-        '<div style="margin-top:6px; font-size:10px; color:#aaa;">'
-        '100ft buffer zone applies under Menin proposal</div>'
-        '</div>'
-    )
+    return ", ".join(parts) if parts else ""
 
 
 def clean_worship_data(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -138,11 +83,17 @@ def clean_worship_data(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         .replace("nan", "Unnamed Place of Worship")
         .fillna("Unnamed Place of Worship")
     )
+    gdf["religion_display"] = (
+        gdf["religion"].astype(str)
+        .str.replace("_", " ").str.title()
+        .replace("Nan", "Unknown")
+    )
     gdf["denomination"] = (
         gdf.get("denomination", pd.Series(dtype=str))
-        .astype(str).replace("nan", "").fillna("")
+        .astype(str).replace("nan", "").str.replace("_", " ").str.title()
+        .fillna("")
     )
-    gdf["popup_html"] = gdf.apply(_worship_popup, axis=1)
+    gdf["address"] = gdf.apply(_format_address, axis=1)
     return gdf
 
 
@@ -153,18 +104,20 @@ def clean_education_data(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         .replace("nan", "Unnamed Educational Facility")
         .fillna("Unnamed Educational Facility")
     )
-    gdf["amenity"] = (
+    gdf["amenity_type"] = (
         gdf.get("amenity", pd.Series(dtype=str))
-        .astype(str).replace("nan", "school").fillna("school")
+        .astype(str).replace("nan", "school").str.replace("_", " ").str.title()
+        .fillna("School")
     )
     gdf["color"] = EDUCATION_COLOR
-    gdf["popup_html"] = gdf.apply(_education_popup, axis=1)
+    gdf["address"] = gdf.apply(_format_address, axis=1)
     return gdf
 
 
 def create_buffers(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     gdf_proj = gdf.to_crs(CRS_PROJECTED)
-    buffer_geoms = gdf_proj["geometry"].buffer(CRS_BUFFER_UNIT)
+    # resolution=4 → 16 vertices per circle (vs default 64), ~4x smaller output
+    buffer_geoms = gdf_proj["geometry"].buffer(CRS_BUFFER_UNIT, resolution=BUFFER_RESOLUTION)
     keep_cols = {c: gdf_proj[c] for c in ["name", "color"] if c in gdf_proj.columns}
     buf_gdf = gpd.GeoDataFrame(keep_cols, geometry=buffer_geoms, crs=CRS_PROJECTED)
     return buf_gdf.to_crs(CRS_DISPLAY)

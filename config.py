@@ -44,7 +44,7 @@ BUFFER_FILL_OPACITY = 0.15
 BUFFER_LINE_OPACITY = 0.45
 MARKER_RADIUS = 5
 MARKER_FILL_OPACITY = 0.85
-DISABLE_CLUSTER_AT_ZOOM = 16
+BUFFER_RESOLUTION = 4  # segments per quarter-circle (16 total vs default 64)
 
 # Overpass API endpoints (tried in order on failure)
 OVERPASS_ENDPOINTS = [
